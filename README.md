@@ -10,153 +10,189 @@ ALOHA is a pioneering random access protocol that allows multiple users to share
 
 ```bash
 aloha-simulation/
-├── simulator.py     # Main simulation logic
-├── node.py         # Node behavior implementation
-├── channel.py      # Channel model and collision handling
-├── config.py       # Simulation configuration
-├── experiment.py   # Parameter sweep experiments
-└── metrics.py      # Performance metrics calculation
+├── simulator.py    # Main simulation logic and orchestration
+├── node.py         # Node behavior implementation with packet handling
+├── channel.py      # Channel model and collision detection
+├── config.py       # Simulation configuration parameters
+├── metrics.py      # Performance metrics calculation
 ```
 
-## Components
+## How the Code Works
 
-### Simulator (simulator.py)
+### Core Components and Flow
 
-- Implements both time-driven and event-driven simulation approaches
-- Handles packet transmission scheduling and collision resolution
-- Supports both Pure and Slotted ALOHA modes
+1. **Configuration (config.py)**
+   - Defines system parameters like frame size, channel capacity
+   - Sets simulation parameters (offered load, number of stations)
+   - Controls protocol mode (PURE or SLOTTED ALOHA)
+   - These parameters determine the fundamental behavior of the simulation
 
-### Node (node.py)
+2. **Station Implementation (node.py)**
+   - Each network station (Node) manages:
+     - Packet generation based on Poisson process
+     - Transmission scheduling
+     - Collision handling with binary exponential backoff
+     - Successful transmission acknowledgment
+   - Key methods:
+     - `ready_to_transmit()`: Determines when a node is ready to send
+     - `transmit()`: Initiates packet transmission
+     - `handle_collision()`: Implements backoff strategy after collision
+     - `handle_success()`: Resets backoff counter after successful transmission
 
-- Models individual network nodes
-- Implements Poisson arrival process
-- Handles collision backoff with exponential backoff strategy
-- Manages packet transmission timing
+3. **Communication Channel (channel.py)**
+   - Models the shared transmission medium
+   - Tracks ongoing transmissions
+   - Detects collisions when multiple nodes transmit simultaneously
+   - Records statistics on successful transmissions and collisions
+   - The `resolve()` method determines transmission outcomes:
+     - No transmissions: Channel remains idle
+     - One transmission: Successful transfer
+     - Multiple transmissions: Collision occurs
 
-### Channel (channel.py)
+4. **Metrics Calculation (metrics.py)**
+   - Computes theoretical throughput based on ALOHA protocol equations:
+     - Pure ALOHA: G * e^(-2G)
+     - Slotted ALOHA: G * e^(-G)
+   - Calculates simulated throughput from actual successful transmissions
+   - Converts normalized throughput to absolute frames per second
 
-- Models the shared communication medium
-- Detects and handles collisions
-- Tracks transmission statistics
-- Manages successful transmission resolution
+5. **Main Simulator (simulator.py)**
+   - Offers two simulation approaches:
+     - Time-driven: Steps through simulation in small time increments
+     - Event-driven: More efficient approach jumping between significant events
+   - Manages the node-channel interactions
+   - Collects and reports performance statistics
+   - Processes command-line arguments to control simulation parameters
 
-### Configuration (config.py)
+### Simulation Execution Flow
 
-Key parameters:
+1. **Initialization**:
+   - Parse command-line arguments
+   - Create network nodes based on configuration
+   - Initialize the shared channel
+   - Set up simulation parameters
 
-- NUM_NODES: Number of nodes in the network
-- FRAME_TIME: Time to transmit one frame
-- TOTAL_TIME: Total simulation duration
-- OFFERED_LOAD: Average transmission attempts per frame
-- MODE: 'PURE' or 'SLOTTED' ALOHA
-- SIMULATION_TYPE: 'TIME_DRIVEN' or 'EVENT_DRIVEN'
+2. **For Time-Driven Simulation**:
+   - Advance in small time steps (delta_t)
+   - At each step:
+     - Check if nodes are ready to transmit
+     - Process any transmissions
+     - Resolve channel state (success or collision)
+     - Update node states accordingly
 
-## Usage
+3. **For Event-Driven Simulation**:
+   - Use a priority queue to manage events chronologically
+   - Process three types of events:
+     - ARRIVAL: New packet generated at a node
+     - TRANSMISSION: Node begins transmitting packet
+     - END_TRANSMISSION: Transmission completes, channel resolves outcome
+   - Jump directly from one event to the next for efficiency
 
-### Basic Simulation
+4. **Resolution and Statistics**:
+   - Track successful transmissions
+   - Calculate simulated throughput
+   - Compare with theoretical expectations
+   - Report performance metrics
 
-```bash
-python simulator.py --mode PURE --load 0.5 --time 100000 --type TIME_DRIVEN
-```
-
-Parameters:
-
-- `--mode`: PURE or SLOTTED
-- `--load`: Offered load G (0.0-2.0)
-- `--time`: Total simulation time
-- `--type`: TIME_DRIVEN or EVENT_DRIVEN
-
-### Running Experiments
-
-```bash
-python experiment.py
-```
-
-This will:
-
-1. Run simulations across different load values
-2. Generate performance comparison plots
-3. Save results to JSON files
-4. Create a visualization in 'aloha_comparison.png'
-
-## Theoretical Background
+## ALOHA Protocol Variants
 
 ### Pure ALOHA
 
 - Nodes transmit immediately when they have data
+- Vulnerable to collisions across entire frame duration
 - Theoretical maximum throughput: 18.4% (1/2e)
-- More vulnerable to collisions
+- Implementation: Nodes transmit as soon as packets arrive
 
 ### Slotted ALOHA
 
-- Transmissions aligned to time slots
+- Transmissions aligned to time slots (frame boundaries)
+- Collisions only occur within same slot period
 - Theoretical maximum throughput: 36.8% (1/e)
-- Better performance due to reduced collision vulnerability
+- Implementation: Nodes defer transmission to the next slot boundary
 
-## Performance Metrics
+## Expected Output
 
-- Throughput (S): Successfully transmitted packets per frame time
-- Offered Load (G): Average transmission attempts per frame time
-- Theoretical maximum throughput:
-  - Pure ALOHA: S = G * e^(-2G)
-  - Slotted ALOHA: S = G * e^(-G)
+When running `simulator.py`, you'll see:
+
+```bash
+Mode: [PURE or SLOTTED]
+Offered Load (G): [value]
+Theoretical Throughput: [calculated value]
+Simulated Throughput: [measured value]
+Absolute Throughput: [frames/second]
+Theoretical Absolute Throughput: [frames/second]
+```
+
+Interpretation:
+
+- **Mode**: The ALOHA variant being simulated
+- **Offered Load (G)**: Average number of transmission attempts per frame time
+- **Theoretical Throughput**: Expected performance based on mathematical model
+- **Simulated Throughput**: Actual performance from simulation (should approach theoretical value)
+- **Absolute Throughput**: Real-world frame rate achieved by the network
+- **Theoretical Absolute Throughput**: Maximum possible frame rate at given load
+
+## Performance Analysis
+
+The key performance metric in ALOHA is **throughput** (S), which represents the fraction of successful transmissions per frame time:
+
+- As offered load (G) increases from 0, throughput initially increases
+- At optimal load:
+  - Pure ALOHA: G=0.5, S=0.184 (18.4%)
+  - Slotted ALOHA: G=1.0, S=0.368 (36.8%)
+- Beyond optimal load, collisions increase and throughput decreases
+
+The simulation validates these theoretical relationships and allows exploration of:
+
+- Effect of varying network size (number of stations)
+- Impact of different backoff strategies
+- Performance under changing load conditions
+
+## Command-Line Usage
+
+```bash
+python simulator.py --mode [PURE|SLOTTED] --load [value] --time [seconds] --stations [count] --type [TIME_DRIVEN|EVENT_DRIVEN]
+```
+
+Parameters:
+
+- `--mode`: ALOHA protocol variant (PURE or SLOTTED)
+- `--load`: Offered load (G), typically 0.1 to 2.0
+- `--time`: Simulation duration in seconds
+- `--stations`: Number of network stations
+- `--type`: Simulation approach (TIME_DRIVEN or EVENT_DRIVEN)
+
+Example:
+
+```bash
+python simulator.py --mode SLOTTED --load 1.0 --time 1000 --stations 50 --type EVENT_DRIVEN
+```
+
+## Understanding Key Variables
+
+- **FRAME_TIME**: Time to transmit one complete packet (seconds)
+- **CHANNEL_CAPACITY**: Network bandwidth in bits per second
+- **FRAME_SIZE**: Packet size in bits
+- **OFFERED_LOAD**: Average packet generation rate across the network
+- **MAX_BACKOFF**: Maximum number of backoff attempts before reset
 
 ## Implementation Details
 
-### Simulation Approaches
+1. **Poisson Arrival Process**:
+   - Packet arrivals follow exponential interarrival times
+   - `random.expovariate()` generates realistic traffic patterns
 
-1. Time-Driven Simulation
-   - Fixed time step advancement
-   - Good for visualizing system state
-   - More computationally intensive
+2. **Binary Exponential Backoff**:
+   - After collision, nodes wait random time before retrying
+   - Backoff window doubles with each collision (up to MAX_BACKOFF)
+   - Reduces collision probability during congestion
 
-2. Event-Driven Simulation
-   - Jumps between events
-   - More efficient for large simulations
-   - Better performance for sparse events
+3. **Event Queue Management**:
+   - Priority queue maintains chronological event ordering
+   - Efficient simulation of large networks over extended periods
+   - Events processed in strict time sequence
 
-### Collision Handling
-
-- Exponential backoff strategy
-- Configurable maximum backoff window
-- Collision detection and resolution
-
-## Output and Visualization
-
-The experiment module generates:
-
-- JSON files with simulation results
-- Performance comparison plots
-- Theoretical vs. simulated throughput curves
-- Maximum throughput indicators
-
-## Requirements
-
-- Python 3.6+
-- NumPy
-- Matplotlib
-
-## Running Tests
-
-Basic simulation verification:
-
-```bash
-python simulator.py --mode PURE --load 0.5 --time 1000
-python simulator.py --mode SLOTTED --load 0.5 --time 1000
-```
-
-Full experiment suite:
-
-```bash
-python experiment.py
-```
-
-## Extensions and Future Work
-
-Possible enhancements:
-
-1. Additional MAC protocols (CSMA, CSMA/CD)
-2. Variable packet sizes
-3. Hidden terminal scenarios
-4. Network visualization
-5. Real-time simulation monitoring
+4. **Simulation Optimization**:
+   - Event-driven approach more efficient than time-driven
+   - Larger simulations use sampling techniques to estimate performance
+   - Parameters can be adjusted for speed vs. accuracy tradeoffs
