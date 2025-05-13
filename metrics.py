@@ -1,32 +1,25 @@
-# metrics.py
 """
-Performance metrics for ALOHA protocols.
+Performance metrics for ALOHA simulation.
 """
 import math
-from config import OFFERED_LOAD, MODE, FRAME_TIME
+from config import MODE, FRAME_TIME
 
-def theoretical_throughput(G=None):
-    """Calculate theoretical throughput for given offered load G"""
-    if G is None:
-        G = OFFERED_LOAD
-        
+def theoretical_throughput(G):
+    """Calculate theoretical throughput based on protocol mode."""
     if MODE == 'PURE':
         return G * math.exp(-2 * G)
-    else:
+    else:  # SLOTTED mode
         return G * math.exp(-G)
 
 def compute_throughput(success_count, total_time):
-    slots = total_time / FRAME_TIME
-    raw_throughput = success_count / slots  # Successful transmissions per slot
-    return raw_throughput  # or return normalized_throughput
+    """Compute simulated throughput from successful transmissions."""
+    # Number of possible transmission slots in the simulation time
+    slot_count = total_time / FRAME_TIME
+    
+    # Normalized throughput (S): successful transmissions per slot
+    return success_count / slot_count
 
-def compute_efficiency(throughput, G=None):
-    # Ratio of achieved to maximum theoretical throughput
-    max_throughput = 0.5 if MODE == 'SLOTTED' else 0.184  # e^-1/2 for slotted, e^-2/2e for pure
-    return throughput / max_throughput
-
-def compute_delay(successful_transmissions, delay_sum):
-    # Average delay for successful transmissions
-    if successful_transmissions == 0:
-        return float('inf')
-    return delay_sum / successful_transmissions
+def absolute_throughput(normalized_throughput, offered_load):
+    """Convert normalized throughput to absolute frames per second."""
+    frame_rate = offered_load / FRAME_TIME  # Total frames per second
+    return normalized_throughput * frame_rate
