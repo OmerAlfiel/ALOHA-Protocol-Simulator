@@ -10,13 +10,12 @@ import matplotlib.pyplot as plt
 import os
 import json
 
-def run_simulations(mode='PURE', simulation_type='TIME_DRIVEN', load_range=None):
+def run_simulations(mode='PURE', simulation_type='EVENT_DRIVEN', load_range=None):
     if load_range is None:
         load_range = [i * 0.1 for i in range(1, 21)]
         
     results = []
     config.MODE = mode
-    config.SIMULATION_TYPE = simulation_type
     
     print(f"Running {mode} ALOHA simulations...")
     
@@ -27,14 +26,29 @@ def run_simulations(mode='PURE', simulation_type='TIME_DRIVEN', load_range=None)
         try:
             # Run simulation and capture output
             output = subprocess.check_output(
-                ['python', 'simulator.py'], 
+                ['python', 'simulator.py', '--mode', mode, '--load', str(G), '--type', simulation_type], 
                 stderr=subprocess.STDOUT
             ).decode()
-            throughput = float(output.strip().split('\n')[-2].split(':')[-1])
+            
+            # Parse the output to find the simulated throughput line
+            lines = output.strip().split('\n')
+            throughput = None
+            for line in lines:
+                if "Simulated Throughput:" in line:
+                    throughput = float(line.split(':')[-1].strip())
+                    break
+            
+            if throughput is None:
+                print(f"    Warning: Could not find throughput value in output")
+                throughput = 0
+                
             results.append((G, throughput))
             print(f"    Throughput: {throughput:.5f}")
         except subprocess.CalledProcessError as e:
             print(f"Error running simulation: {e.output.decode()}")
+            results.append((G, 0))
+        except Exception as e:
+            print(f"Unexpected error: {str(e)}")
             results.append((G, 0))
     
     return results
