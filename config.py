@@ -1,18 +1,18 @@
-# config.py
 """
-Simulation configuration for ALOHA protocols.
+Configuration parameters for ALOHA simulation.
 """
 import math
 
+# System parameters
+FRAME_SIZE = 200             # Frame size in bits
+CHANNEL_CAPACITY = 200000    # Channel capacity in bits per second (200 kbps)
+FRAME_TIME = FRAME_SIZE / CHANNEL_CAPACITY  # Time to transmit one frame (0.001 s)
+
 # Simulation parameters
-NUM_NODES = 50               # Number of nodes in the network
-FRAME_TIME = 1.0             # Time to transmit one frame (arbitrary units)
-TOTAL_TIME = 100000.0           # Total simulation time or number of slots
-OFFERED_LOAD = 0.5           # G: average number of transmission attempts per frame time
-BACKOFF_MAX = 5              # Max backoff window in slot units
+OFFERED_LOAD = 1.0           # G: average number of transmission attempts per frame time
+NUM_STATIONS = 50            # Number of stations in the network
+SIMULATION_TIME = 1000.0     # Total simulation time in seconds
+MAX_BACKOFF = 15             # Maximum backoff counter value
 
 # Protocol mode: 'PURE' or 'SLOTTED'
-MODE = 'SLOTTED'                # Switch to 'SLOTTED' for Slotted ALOHA
-
-# Time-driven vs Event-driven
-SIMULATION_TYPE = 'TIME_DRIVEN'  # or 'EVENT_DRIVEN'
+MODE = 'PURE'             # ALOHA protocol mode
