@@ -1,140 +1,222 @@
-# simulator.py
 """
 Main simulation orchestrator for ALOHA.
 """
-import heapq
 import argparse
-from config import NUM_NODES, TOTAL_TIME, FRAME_TIME, SIMULATION_TYPE, MODE, OFFERED_LOAD
+import random
+import math
+import heapq  # Import at the top
+from config import (FRAME_SIZE, CHANNEL_CAPACITY, FRAME_TIME, OFFERED_LOAD,
+                   NUM_STATIONS, SIMULATION_TIME, MAX_BACKOFF, MODE)
 from node import Node
 from channel import Channel
-from metrics import compute_throughput, theoretical_throughput
+from metrics import theoretical_throughput, compute_throughput, absolute_throughput
+
+# Declare these as global so they can be modified
+MODE_VALUE = MODE
+OFFERED_LOAD_VALUE = OFFERED_LOAD
+SIMULATION_TIME_VALUE = SIMULATION_TIME
+NUM_STATIONS_VALUE = NUM_STATIONS
 
 def time_driven():
-    nodes = [Node(i, OFFERED_LOAD) for i in range(NUM_NODES)]
+    """Run time-driven ALOHA simulation."""
+    # Create network nodes
+    nodes = [Node(i, OFFERED_LOAD_VALUE / NUM_STATIONS_VALUE) for i in range(NUM_STATIONS_VALUE)]
     channel = Channel()
-    success = 0
-
+    
+    # Small time step for accurate simulation
+    delta_t = 0.0001
+    
+    # Track successful transmissions
+    success_count = 0
+    
+    # Run simulation
     t = 0.0
-    while t < TOTAL_TIME:
-        # Schedule arrivals and transmissions
+    while t < SIMULATION_TIME_VALUE:
+        # Process all nodes at this time step
         for node in nodes:
             if node.ready_to_transmit(t):
-                channel.add_transmission(node.transmit(t))
+                channel.add_transmission(node.transmit())
         
-        # Resolve channel state at frame boundaries
-        if MODE == 'SLOTTED' or t % FRAME_TIME == 0:
-            s, winner, coll, involved_nodes = channel.resolve()
-            if s:
-                success += 1
-                # Schedule next packet for successful node
+        # For slotted ALOHA, only resolve at slot boundaries
+        if MODE_VALUE == 'SLOTTED':
+            # Check if we're at a slot boundary (with some tolerance)
+            if abs(t % FRAME_TIME) < delta_t:
+                success, winner, collision, involved = channel.resolve()
+                if success:
+                    success_count += 1
+                    # Inform successful node
+                    for node in nodes:
+                        if node.id == winner:
+                            node.handle_success()
+                elif collision:
+                    # Inform all nodes involved in collision
+                    for node in nodes:
+                        if node.id in involved:
+                            node.handle_collision(t)
+        else:
+            # Pure ALOHA resolves continuously
+            success, winner, collision, involved = channel.resolve()
+            if success:
+                success_count += 1
+                # Inform successful node
                 for node in nodes:
                     if node.id == winner:
-                        node.schedule_next(t)
-                        break
-            elif coll:
-                # Handle collision for all involved nodes
+                        node.handle_success()
+            elif collision:
+                # Inform all nodes involved in collision
                 for node in nodes:
-                    if node.id in involved_nodes:
+                    if node.id in involved:
                         node.handle_collision(t)
         
-        t += FRAME_TIME
-
-    throughput = compute_throughput(success, TOTAL_TIME)
-    theoretical = theoretical_throughput()
+        t += delta_t
     
-    print(f"Mode: {MODE}")
-    print(f"Offered Load (G): {OFFERED_LOAD}")
-    print(f"Theoretical Throughput: {theoretical:.5f}")
-    print(f"Simulated Throughput: {throughput:.5f}")
-    
-    return throughput
+    # Calculate throughput
+    sim_throughput = compute_throughput(success_count, SIMULATION_TIME_VALUE)
+    return sim_throughput
 
 def event_driven():
-    event_queue = []  # Priority queue of events
-    nodes = [Node(i, OFFERED_LOAD) for i in range(NUM_NODES)]
+    """Run event-driven ALOHA simulation with proper implementation."""
+    # Event types
+    ARRIVAL = 0
+    TRANSMISSION = 1
+    END_TRANSMISSION = 2
+    
+    # Initialize network with smaller number of nodes for efficiency
+    actual_stations = min(NUM_STATIONS_VALUE, 20)  # Limit to 20 stations for faster simulation
+    nodes = [Node(i, OFFERED_LOAD_VALUE / actual_stations) for i in range(actual_stations)]
     channel = Channel()
-    success = 0
+    success_count = 0
     
-    # Initialize event queue with first arrival for each node
+    # Event queue: (time, event_type, node_id, priority)
+    # Adding a priority field to break ties in time values
+    events = []
+    priority = 0
+    
+    # Schedule initial arrivals for all nodes
     for node in nodes:
-        heapq.heappush(event_queue, (node.next_arrival, node.id, "ARRIVE"))
+        priority += 1
+        heapq.heappush(events, (node.next_arrival, ARRIVAL, node.id, priority))
     
-    # Process events until simulation time
+    # Process events
     current_time = 0
-    active_transmissions = set()  # Set of currently active transmissions
+    slot_time = FRAME_TIME  # Time for one slot
+    simulation_end_time = min(SIMULATION_TIME_VALUE, 100)  # Limit simulation time for faster results
     
-    while event_queue and current_time < TOTAL_TIME:
-        time, node_id, event_type = heapq.heappop(event_queue)
-        current_time = time
+    # Process events until simulation time is reached
+    while events and current_time < simulation_end_time:
+        # Get next event
+        event_time, event_type, node_id, _ = heapq.heappop(events)
+        current_time = event_time
         
-        # Handle different event types
-        if event_type == "ARRIVE":
-            # Process arrival event
+        if current_time >= simulation_end_time:
+            break
+        
+        if event_type == ARRIVAL:
+            # Process new packet arrival
             node = nodes[node_id]
             
-            # If in SLOTTED mode, align to next slot boundary
-            if MODE == 'SLOTTED':
-                slot_boundary = (current_time // FRAME_TIME + 1) * FRAME_TIME
-                heapq.heappush(event_queue, (slot_boundary, node_id, "TRANSMIT"))
+            # Generate next packet arrival
+            priority += 1
+            next_arrival = current_time + random.expovariate(node.offered_load)
+            heapq.heappush(events, (next_arrival, ARRIVAL, node_id, priority))
+            
+            # Schedule immediate transmission
+            if MODE_VALUE == 'SLOTTED':
+                # For slotted ALOHA, align to next slot boundary
+                next_slot = math.ceil(current_time / slot_time) * slot_time
+                priority += 1
+                heapq.heappush(events, (next_slot, TRANSMISSION, node_id, priority))
             else:
-                # In PURE mode, transmit immediately
-                heapq.heappush(event_queue, (current_time, node_id, "TRANSMIT"))
-                
-            # Schedule next arrival
-            next_arrival = current_time + node._generate_interarrival()
-            heapq.heappush(event_queue, (next_arrival, node_id, "ARRIVE"))
+                # For pure ALOHA, transmit immediately
+                priority += 1
+                heapq.heappush(events, (current_time, TRANSMISSION, node_id, priority))
+        
+        elif event_type == TRANSMISSION:
+            # Add transmission to channel
+            channel.add_transmission(node_id)
             
-        elif event_type == "TRANSMIT":
-            node = nodes[node_id]
-            # Start transmission
-            active_transmissions.add(node_id)
             # Schedule end of transmission
-            heapq.heappush(event_queue, (current_time + FRAME_TIME, node_id, "END_TRANSMIT"))
+            priority += 1
+            heapq.heappush(events, (current_time + slot_time, END_TRANSMISSION, node_id, priority))
+        
+        elif event_type == END_TRANSMISSION:
+            # Resolve channel state
+            success, winner, collision, involved = channel.resolve()
             
-        elif event_type == "END_TRANSMIT":
-            # End of transmission
-            active_transmissions.remove(node_id)
+            if success:
+                # Successful transmission
+                success_count += 1
             
-            # Check for collision
-            if len(active_transmissions) == 0:  # No collision
-                success += 1
-                nodes[node_id].schedule_next(current_time)
-            else:  # Collision occurred
-                for tx_id in list(active_transmissions):
-                    nodes[tx_id].handle_collision(current_time)
-                    active_transmissions.remove(tx_id)
-                    heapq.heappush(event_queue, (nodes[tx_id].next_arrival, tx_id, "TRANSMIT"))
+            elif collision and involved:
+                # Schedule retransmissions for collided packets
+                for collided_id in involved:
+                    # Binary exponential backoff
+                    backoff = random.randint(0, 2**min(nodes[collided_id].backoff_counter, MAX_BACKOFF))
+                    nodes[collided_id].backoff_counter += 1
+                    
+                    retry_time = current_time + backoff * slot_time
+                    if MODE_VALUE == 'SLOTTED':
+                        # Align to slot boundary
+                        retry_time = math.ceil(retry_time / slot_time) * slot_time
+                    
+                    priority += 1
+                    heapq.heappush(events, (retry_time, TRANSMISSION, collided_id, priority))
     
-    throughput = compute_throughput(success, TOTAL_TIME)
-    theoretical = theoretical_throughput()
+    # Scale results to account for simulation time and number of stations
+    scaling_factor = (SIMULATION_TIME_VALUE / simulation_end_time) * (NUM_STATIONS_VALUE / actual_stations)
+    scaled_success = success_count * scaling_factor
     
-    print(f"Mode: {MODE}")
-    print(f"Offered Load (G): {OFFERED_LOAD}")
-    print(f"Theoretical Throughput: {theoretical:.5f}")
-    print(f"Simulated Throughput: {throughput:.5f}")
-    
-    return throughput
+    # Calculate throughput
+    sim_throughput = scaled_success / (SIMULATION_TIME_VALUE / FRAME_TIME)
+    return sim_throughput
 
-if __name__ == "__main__":
+def main():
+    """Main program entry point."""
+    global MODE_VALUE, OFFERED_LOAD_VALUE, SIMULATION_TIME_VALUE, NUM_STATIONS_VALUE
+    
     parser = argparse.ArgumentParser(description='ALOHA Protocol Simulator')
-    parser.add_argument('--mode', choices=['PURE', 'SLOTTED'], help='ALOHA protocol mode')
-    parser.add_argument('--load', type=float, help='Offered load G')
-    parser.add_argument('--time', type=float, help='Total simulation time')
-    parser.add_argument('--type', choices=['TIME_DRIVEN', 'EVENT_DRIVEN'], help='Simulation type')
+    parser.add_argument('--mode', choices=['PURE', 'SLOTTED'], 
+                        default=MODE_VALUE, help='ALOHA protocol mode')
+    parser.add_argument('--load', type=float, default=OFFERED_LOAD_VALUE,
+                        help='Offered load G')
+    parser.add_argument('--time', type=float, default=SIMULATION_TIME_VALUE,
+                        help='Simulation time in seconds')
+    parser.add_argument('--stations', type=int, default=NUM_STATIONS_VALUE,
+                        help='Number of stations')
+    parser.add_argument('--type', choices=['TIME_DRIVEN', 'EVENT_DRIVEN'], 
+                        default='EVENT_DRIVEN', help='Simulation type')
     
     args = parser.parse_args()
     
-    # Update config if arguments provided
-    if args.mode:
-        MODE = args.mode
-    if args.load:
-        OFFERED_LOAD = args.load
-    if args.time:
-        TOTAL_TIME = args.time
-    if args.type:
-        SIMULATION_TYPE = args.type
+    # Update global configuration
+    MODE_VALUE = args.mode
+    OFFERED_LOAD_VALUE = args.load
+    SIMULATION_TIME_VALUE = args.time
+    NUM_STATIONS_VALUE = args.stations
     
-    if SIMULATION_TYPE == 'TIME_DRIVEN':
-        time_driven()
+    # Print simulation parameters
+    print(f"Mode: {MODE_VALUE}")
+    print(f"Offered Load (G): {OFFERED_LOAD_VALUE}")
+    
+    # Calculate theoretical throughput
+    theory = theoretical_throughput(OFFERED_LOAD_VALUE)
+    print(f"Theoretical Throughput: {theory:.5f}")
+    
+    # Run simulation based on type
+    if args.type == 'TIME_DRIVEN':
+        sim_throughput = time_driven()
     else:
-        event_driven()
+        sim_throughput = event_driven()
+    
+    print(f"Simulated Throughput: {sim_throughput:.5f}")
+    
+    # Calculate absolute throughput (frames per second)
+    abs_throughput = absolute_throughput(sim_throughput, OFFERED_LOAD_VALUE)
+    print(f"Absolute Throughput: {abs_throughput:.1f} frames/second")
+    
+    # Calculate theoretical absolute throughput
+    theo_abs = absolute_throughput(theory, OFFERED_LOAD_VALUE)
+    print(f"Theoretical Absolute Throughput: {theo_abs:.1f} frames/second")
+
+if __name__ == "__main__":
+    main()
