@@ -1,41 +1,34 @@
-# channel.py
 """
 Channel model for ALOHA simulation.
 """
+from config import FRAME_TIME
+
 class Channel:
+    """Represents the shared communication channel."""
     def __init__(self):
         self.transmissions = []
-        self.total_attempts = 0
-        self.successful_transmissions = 0
-        self.collisions = 0
-
-    def reset(self):
-        self.transmissions.clear()
-
+        self.stats = {'success': 0, 'collision': 0}
+    
     def add_transmission(self, node_id):
+        """Add a node's transmission to the channel."""
         self.transmissions.append(node_id)
-        self.total_attempts += 1
-
+    
     def resolve(self):
-        if len(self.transmissions) == 1:
-            success = True
-            winner = self.transmissions[0]
-            self.successful_transmissions += 1
-        else:
-            success = False
-            winner = None
-            if len(self.transmissions) > 1:
-                self.collisions += 1
+        """Resolve current transmissions and detect collisions."""
+        # If no transmissions, return no success, no collision
+        if not self.transmissions:
+            return False, None, False, []
         
-        collided = len(self.transmissions) > 1
-        nodes_involved = self.transmissions.copy()
-        self.reset()
-        return success, winner, collided, nodes_involved
-
-    def get_statistics(self):
-        return {
-            "total_attempts": self.total_attempts,
-            "successful": self.successful_transmissions,
-            "collisions": self.collisions,
-            "efficiency": self.successful_transmissions / self.total_attempts if self.total_attempts > 0 else 0
-        }
+        # Single transmission = success
+        if len(self.transmissions) == 1:
+            successful_node = self.transmissions[0]
+            self.stats['success'] += 1
+            self.transmissions = []  # Clear channel
+            return True, successful_node, False, []
+        
+        # Multiple transmissions = collision
+        else:
+            collided_nodes = self.transmissions.copy()
+            self.stats['collision'] += 1
+            self.transmissions = []  # Clear channel
+            return False, None, True, collided_nodes
